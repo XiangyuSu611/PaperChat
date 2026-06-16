@@ -10,6 +10,7 @@ PaperChat is a local paper-reading workspace for Zotero. It opens Zotero papers 
 - Generate structured Markdown reading notes.
 - Chat continuously with the current paper.
 - Select text in the PDF or note and send it into the chat box.
+- Look up final publication metadata for arXiv/preprint PDFs using arXiv, Semantic Scholar, Crossref, and OpenAlex.
 - Configure OpenAI or DeepSeek API keys from the local UI.
 - Open a selected Zotero item from the companion Zotero plugin.
 

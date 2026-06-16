@@ -12,6 +12,9 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
+import xml.etree.ElementTree as ET
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Optional
 
@@ -72,6 +75,7 @@ TITLE_FIELD = "title"
 MAX_NOTE_CHARS = 52000
 MAX_CHAT_CHARS = 28000
 MAX_CHAT_FULL_TEXT_CHARS = int(os.environ.get("PAPER_CHAT_FULL_TEXT_CHARS", "1000000"))
+HTTP_USER_AGENT = "PaperChat/0.1 (local metadata lookup; https://github.com/XiangyuSu611/PaperChat)"
 
 
 app = FastAPI(title="Paper Chat")
@@ -135,6 +139,16 @@ def read_json(path: Path, default: Any = None) -> Any:
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def http_get_text(url: str, timeout: int = 12) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": HTTP_USER_AGENT})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+
+def http_get_json(url: str, timeout: int = 12) -> dict[str, Any]:
+    return json.loads(http_get_text(url, timeout=timeout))
 
 
 def read_settings() -> dict[str, Any]:
@@ -495,6 +509,271 @@ def read_chunks(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def normalize_title(value: str) -> str:
+    value = re.sub(r"[\W_]+", " ", value.lower(), flags=re.UNICODE)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def title_similarity(left: str, right: str) -> float:
+    a = normalize_title(left)
+    b = normalize_title(right)
+    if not a or not b:
+        return 0.0
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def extract_arxiv_id(*values: str) -> str:
+    patterns = [
+        r"arxiv(?:\.org)?[/:\s]+(?:abs/|pdf/)?(\d{4}\.\d{4,5})(?:v\d+)?",
+        r"\b(\d{4}\.\d{4,5})(?:v\d+)?\b",
+        r"\b([a-z-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?\b",
+    ]
+    for value in values:
+        if not value:
+            continue
+        for pattern in patterns:
+            match = re.search(pattern, value, re.IGNORECASE)
+            if match:
+                return match.group(1)
+    return ""
+
+
+def compact_candidate(candidate: dict[str, Any], target_title: str) -> dict[str, Any]:
+    title = candidate.get("title") or ""
+    score = float(candidate.get("score") or 0)
+    sim = title_similarity(target_title, title)
+    confidence = min(0.99, max(score, sim))
+    if candidate.get("doi"):
+        confidence = min(0.99, confidence + 0.08)
+    if candidate.get("venue"):
+        confidence = min(0.99, confidence + 0.04)
+    return {
+        "source": candidate.get("source", ""),
+        "title": title,
+        "doi": candidate.get("doi", ""),
+        "venue": candidate.get("venue", ""),
+        "publisher": candidate.get("publisher", ""),
+        "year": candidate.get("year"),
+        "type": candidate.get("type", ""),
+        "url": candidate.get("url", ""),
+        "arxiv_id": candidate.get("arxiv_id", ""),
+        "journal_ref": candidate.get("journal_ref", ""),
+        "confidence": round(confidence, 3),
+    }
+
+
+def dedupe_candidates(candidates: list[dict[str, Any]], target_title: str) -> list[dict[str, Any]]:
+    by_key: dict[str, dict[str, Any]] = {}
+    for candidate in candidates:
+        doi = str(candidate.get("doi") or "").lower().strip()
+        title = normalize_title(candidate.get("title") or "")
+        key = doi or title
+        if not key:
+            continue
+        compact = compact_candidate(candidate, target_title)
+        existing = by_key.get(key)
+        if existing:
+            for field in ("doi", "venue", "publisher", "year", "type", "url", "arxiv_id", "journal_ref"):
+                if not existing.get(field) and compact.get(field):
+                    existing[field] = compact[field]
+            if compact["confidence"] > existing["confidence"]:
+                existing["confidence"] = compact["confidence"]
+                existing["source"] = compact["source"]
+            if compact.get("venue") and not existing.get("journal_ref"):
+                existing["venue"] = compact["venue"]
+            continue
+        if not existing:
+            by_key[key] = compact
+    out = sorted(by_key.values(), key=lambda item: item["confidence"], reverse=True)
+    return out[:8]
+
+
+def parse_arxiv_entry(entry: ET.Element) -> dict[str, Any]:
+    ns = {
+        "atom": "http://www.w3.org/2005/Atom",
+        "arxiv": "http://arxiv.org/schemas/atom",
+    }
+    title = "".join(entry.findtext("atom:title", default="", namespaces=ns).split())
+    title = re.sub(r"\s+", " ", entry.findtext("atom:title", default="", namespaces=ns)).strip()
+    arxiv_url = entry.findtext("atom:id", default="", namespaces=ns).strip()
+    arxiv_id = extract_arxiv_id(arxiv_url)
+    doi = entry.findtext("arxiv:doi", default="", namespaces=ns).strip()
+    journal_ref = entry.findtext("arxiv:journal_ref", default="", namespaces=ns).strip()
+    published = entry.findtext("atom:published", default="", namespaces=ns)
+    year = int(published[:4]) if published[:4].isdigit() else None
+    return {
+        "source": "arxiv",
+        "title": title,
+        "doi": doi,
+        "venue": journal_ref,
+        "year": year,
+        "type": "preprint" if not journal_ref else "published-record",
+        "url": arxiv_url,
+        "arxiv_id": arxiv_id,
+        "journal_ref": journal_ref,
+        "score": 0.72 if journal_ref or doi else 0.56,
+    }
+
+
+def search_arxiv_metadata(title: str, arxiv_id: str = "") -> list[dict[str, Any]]:
+    if arxiv_id:
+        query = f"id:{arxiv_id}"
+    else:
+        quoted = urllib.parse.quote(f'ti:"{title}"')
+        query = quoted
+    url = f"https://export.arxiv.org/api/query?search_query={query}&start=0&max_results=5"
+    try:
+        root = ET.fromstring(http_get_text(url))
+    except Exception:
+        return []
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    return [parse_arxiv_entry(entry) for entry in root.findall("atom:entry", ns)]
+
+
+def search_crossref_metadata(title: str, doi: str = "") -> list[dict[str, Any]]:
+    if doi:
+        url = f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"
+    else:
+        url = (
+            "https://api.crossref.org/works?"
+            + urllib.parse.urlencode({"query.bibliographic": title, "rows": 5})
+        )
+    try:
+        data = http_get_json(url)
+    except Exception:
+        return []
+    message = data.get("message", {})
+    items = [message] if doi and message.get("DOI") else message.get("items", [])
+    candidates = []
+    for item in items[:5]:
+        item_title = " ".join(item.get("title") or []).strip()
+        container = " ".join(item.get("container-title") or []).strip()
+        published = item.get("published-print") or item.get("published-online") or item.get("issued") or {}
+        date_parts = published.get("date-parts") or []
+        year = date_parts[0][0] if date_parts and date_parts[0] else None
+        candidates.append(
+            {
+                "source": "crossref",
+                "title": item_title,
+                "doi": item.get("DOI", ""),
+                "venue": container,
+                "publisher": item.get("publisher", ""),
+                "year": year,
+                "type": item.get("type", ""),
+                "url": item.get("URL", ""),
+                "score": title_similarity(title, item_title),
+            }
+        )
+    return candidates
+
+
+def search_openalex_metadata(title: str, doi: str = "") -> list[dict[str, Any]]:
+    if doi:
+        url = f"https://api.openalex.org/works/https://doi.org/{urllib.parse.quote(doi)}"
+    else:
+        url = "https://api.openalex.org/works?" + urllib.parse.urlencode({"search": title, "per-page": 5})
+    try:
+        data = http_get_json(url)
+    except Exception:
+        return []
+    items = [data] if doi and data.get("id") else data.get("results", [])
+    candidates = []
+    for item in items[:5]:
+        source = item.get("primary_location", {}).get("source") or {}
+        candidates.append(
+            {
+                "source": "openalex",
+                "title": item.get("title", ""),
+                "doi": (item.get("doi") or "").replace("https://doi.org/", ""),
+                "venue": source.get("display_name", ""),
+                "publisher": source.get("host_organization_name", ""),
+                "year": item.get("publication_year"),
+                "type": item.get("type", ""),
+                "url": item.get("doi") or item.get("id", ""),
+                "score": title_similarity(title, item.get("title", "")),
+            }
+        )
+    return candidates
+
+
+def search_semantic_scholar_metadata(title: str, arxiv_id: str = "", doi: str = "") -> list[dict[str, Any]]:
+    fields = "title,venue,year,publicationVenue,externalIds,url,publicationTypes"
+    if doi or arxiv_id:
+        paper_id = f"DOI:{doi}" if doi else f"ARXIV:{arxiv_id}"
+        url = (
+            f"https://api.semanticscholar.org/graph/v1/paper/{urllib.parse.quote(paper_id, safe=':')}"
+            + "?"
+            + urllib.parse.urlencode({"fields": fields})
+        )
+        try:
+            data = http_get_json(url)
+            items = [data] if data.get("title") else []
+        except Exception:
+            items = []
+    else:
+        url = (
+            "https://api.semanticscholar.org/graph/v1/paper/search?"
+            + urllib.parse.urlencode({"query": title, "limit": 5, "fields": fields})
+        )
+        try:
+            data = http_get_json(url)
+            items = data.get("data", [])
+        except Exception:
+            items = []
+    candidates = []
+    for item in items[:5]:
+        external = item.get("externalIds") or {}
+        venue_obj = item.get("publicationVenue") or {}
+        venue = venue_obj.get("name") or item.get("venue", "")
+        candidates.append(
+            {
+                "source": "semantic_scholar",
+                "title": item.get("title", ""),
+                "doi": external.get("DOI", ""),
+                "venue": venue,
+                "publisher": "",
+                "year": item.get("year"),
+                "type": ", ".join(item.get("publicationTypes") or []),
+                "url": item.get("url", ""),
+                "arxiv_id": external.get("ArXiv", ""),
+                "score": title_similarity(title, item.get("title", "")),
+            }
+        )
+    return candidates
+
+
+def resolve_publication_metadata(metadata: dict[str, Any], paper_text: str = "") -> dict[str, Any]:
+    title = str(metadata.get("title") or metadata.get("paper_id") or "").strip()
+    arxiv_id = extract_arxiv_id(
+        title,
+        metadata.get("pdf_path", ""),
+        paper_text[:4000],
+    )
+    candidates: list[dict[str, Any]] = []
+    arxiv_candidates = search_arxiv_metadata(title, arxiv_id)
+    candidates.extend(arxiv_candidates)
+    doi = next((candidate.get("doi") for candidate in arxiv_candidates if candidate.get("doi")), "")
+    candidates.extend(search_semantic_scholar_metadata(title, arxiv_id, doi))
+    candidates.extend(search_crossref_metadata(title, doi))
+    candidates.extend(search_openalex_metadata(title, doi))
+    compact = dedupe_candidates(candidates, title)
+    best = compact[0] if compact else None
+    status = "not_found"
+    if best:
+        if best["confidence"] >= 0.82 and (best.get("doi") or best.get("venue")):
+            status = "found"
+        elif best["confidence"] >= 0.65:
+            status = "maybe"
+    return {
+        "status": status,
+        "queried_title": title,
+        "arxiv_id": arxiv_id,
+        "best": best,
+        "candidates": compact,
+        "looked_up_at": now_ts(),
+    }
 
 
 def read_chat_history(path: Path) -> list[dict[str, Any]]:
@@ -887,6 +1166,20 @@ def get_paper(paper_id: str) -> dict[str, Any]:
     history = read_chat_history(history_path)
     state = read_paper_state(pdir)
     return {"metadata": metadata, "note": note, "history": history, "state": state}
+
+
+@app.post("/api/paper/{paper_id}/publication")
+def lookup_publication(paper_id: str) -> dict[str, Any]:
+    pdir = paper_dir(paper_id)
+    metadata = read_json(pdir / "metadata.json")
+    if not metadata:
+        raise HTTPException(404, "Paper not found")
+    paper_text_path = pdir / "paper_text.txt"
+    paper_text = paper_text_path.read_text(encoding="utf-8") if paper_text_path.exists() else ""
+    publication = resolve_publication_metadata(metadata, paper_text)
+    metadata["publication"] = publication
+    write_json(pdir / "metadata.json", metadata)
+    return {"metadata": metadata, "publication": publication}
 
 
 @app.post("/api/paper/{paper_id}/state")

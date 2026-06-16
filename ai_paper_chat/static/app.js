@@ -352,12 +352,39 @@ function renderMarkdown(md) {
   return out.join("\n");
 }
 
+function formatPublication(publication) {
+  const root = $("publicationMeta");
+  if (!root) return;
+  if (!publication) {
+    root.innerHTML = "";
+    return;
+  }
+  const best = publication.best;
+  if (!best) {
+    root.innerHTML = `<span class="publication-pill muted-pill">Publication not found</span>`;
+    return;
+  }
+  const statusLabel = publication.status === "found" ? "Published" : "Possible match";
+  const venue = best.venue || best.publisher || "venue unknown";
+  const year = best.year ? ` · ${best.year}` : "";
+  const doi = best.doi ? ` · DOI: ${escapeHtml(best.doi)}` : "";
+  const confidence = Number.isFinite(best.confidence) ? ` · ${Math.round(best.confidence * 100)}%` : "";
+  const link = best.url
+    ? `<a href="${escapeHtml(best.url)}" target="_blank" rel="noreferrer">${escapeHtml(venue)}</a>`
+    : escapeHtml(venue);
+  root.innerHTML = `
+    <span class="publication-pill">${statusLabel}</span>
+    <span>${link}${year}${doi}${confidence}</span>
+  `;
+}
+
 async function refreshPaper() {
   if (!currentPaper) return;
   const data = await api(`/api/paper/${encodeURIComponent(currentPaper)}`);
   $("paperTitle").textContent = data.metadata.title || currentPaper;
   currentEntryUrl = data.metadata.entry_url || `${health.base_url}/?paper=${encodeURIComponent(data.metadata.paper_id)}`;
   $("paperMeta").textContent = `${data.metadata.paper_id} · ${data.metadata.source} · ${data.metadata.pdf_path}`;
+  formatPublication(data.metadata.publication);
   pdfZoom = 1;
   renderPdf(`/api/paper/${encodeURIComponent(data.metadata.paper_id)}/preview.pdf`);
   $("note").innerHTML = renderMarkdown(data.note);
@@ -369,6 +396,7 @@ async function refreshPaper() {
   $("noteBtn").disabled = false;
   $("askBtn").disabled = false;
   $("entryBtn").disabled = false;
+  $("publicationBtn").disabled = false;
 }
 
 function updatePdfZoomControls() {
@@ -824,6 +852,30 @@ async function init() {
       window.setTimeout(() => setBusy(), 1200);
     } catch {
       prompt("Copy this entry link:", currentEntryUrl);
+    }
+  });
+
+  $("publicationBtn").addEventListener("click", async () => {
+    if (!currentPaper) return;
+    setBusy("Searching publication info...");
+    setButtonLoading($("publicationBtn"), true, "Searching...");
+    try {
+      const data = await api(`/api/paper/${encodeURIComponent(currentPaper)}/publication`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      formatPublication(data.publication);
+      if (data.publication?.status === "not_found") {
+        setBusy("No final publication found.");
+      } else {
+        setBusy("Publication info saved.");
+      }
+      window.setTimeout(() => setBusy(), 1600);
+    } catch (err) {
+      alert(err.message);
+      setBusy();
+    } finally {
+      setButtonLoading($("publicationBtn"), false);
     }
   });
 
