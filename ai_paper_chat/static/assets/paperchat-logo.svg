@@ -1,0 +1,18 @@
+<svg width="720" height="240" viewBox="0 0 720 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>PaperChat logo</title>
+  <rect width="720" height="240" fill="#FFFFFF"/>
+  <g transform="translate(48 44)">
+    <rect x="0" y="0" width="152" height="152" rx="34" fill="#155E63"/>
+    <path d="M48 34H94L118 58V118C118 124.627 112.627 130 106 130H48C41.373 130 36 124.627 36 118V46C36 39.373 41.373 34 48 34Z" fill="#F7F5EF"/>
+    <path d="M94 35V57C94 63.075 98.925 68 105 68H118" fill="#D7E6E3"/>
+    <path d="M60 72H94" stroke="#155E63" stroke-width="8" stroke-linecap="round"/>
+    <path d="M60 92H86" stroke="#155E63" stroke-width="8" stroke-linecap="round"/>
+    <path d="M101 94C101 82.954 110.178 74 121.5 74C132.822 74 142 82.954 142 94C142 105.046 132.822 114 121.5 114H115L104 124V110.985C99.979 107.326 101 100.701 101 94Z" fill="#FFCF66"/>
+    <path d="M118 94H126" stroke="#155E63" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(236 72)">
+    <text x="0" y="56" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="54" font-weight="800" letter-spacing="0" fill="#15191D">Paper</text>
+    <text x="166" y="56" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="54" font-weight="800" letter-spacing="0" fill="#155E63">Chat</text>
+    <text x="2" y="92" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" font-weight="600" letter-spacing="0" fill="#65717A">read, note, ask</text>
+  </g>
+</svg>

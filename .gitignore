@@ -1,0 +1,40 @@
+# This workspace is a Zotero data directory. Keep GitHub releases scoped to PaperChat only.
+*
+
+!.gitignore
+!README.md
+!requirements.txt
+
+!ai_paper_chat/
+!ai_paper_chat/**
+!zotero_paper_chat_plugin/
+!zotero_paper_chat_plugin/**
+
+# Runtime and private data
+ai_reading/
+storage/
+locate/
+logs/
+notes/
+styles/
+translators/
+outputs/
+
+# Zotero database and attachment export files
+zotero.sqlite*
+*.prop
+*.zip
+*.xpi
+
+# Python and local caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets and local environment files
+.env
+.env.*
+settings.json
+ai_reading/settings.json

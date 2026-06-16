@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Paper Chat</title>
+    <link rel="stylesheet" href="/static/vendor/katex/katex.min.css" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div id="sidebarHotspot" class="sidebar-hotspot" aria-hidden="true"></div>
+    <main class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <img class="brand-logo" src="/static/assets/paperchat-logo.svg" alt="" aria-hidden="true" />
+          <div class="brand-copy">
+            <h1>PaperChat</h1>
+            <p id="health"></p>
+          </div>
+        </div>
+
+        <section class="panel">
+          <label for="query">Zotero title / key</label>
+          <div class="row">
+            <input id="query" placeholder="Planning, DiffuScene, PQJTGZLN" />
+            <button id="searchBtn" title="Search">Search</button>
+          </div>
+          <div id="results" class="results"></div>
+        </section>
+
+        <section class="panel">
+          <label for="collectionSelect">Zotero folder</label>
+          <div class="row">
+            <select id="collectionSelect"></select>
+            <button id="collectionLoadBtn" title="Load folder">Load</button>
+          </div>
+          <div id="collectionResults" class="results"></div>
+        </section>
+
+        <section class="panel">
+          <label for="pdfPath">PDF path</label>
+          <div class="row">
+            <input id="pdfPath" placeholder="C:\...\paper.pdf" />
+            <button id="loadPdfBtn" title="Load PDF">Load</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <label for="provider">Provider</label>
+          <select id="provider"></select>
+          <label for="model" class="stacked-label">Model</label>
+          <select id="model"></select>
+          <label for="apiKeyInput" class="stacked-label">API key</label>
+          <input id="apiKeyInput" type="password" autocomplete="off" placeholder="No API key set" />
+          <button id="saveApiKeyBtn" class="full-button">Save API Key</button>
+        </section>
+      </aside>
+
+      <section class="reader">
+        <header class="toolbar">
+          <div>
+            <div class="eyebrow">Current Paper</div>
+            <h2 id="paperTitle">No paper loaded</h2>
+            <p id="paperMeta"></p>
+          </div>
+          <div class="actions">
+            <button id="entryBtn" disabled>Copy Entry Link</button>
+            <button id="noteBtn" disabled>Generate Note</button>
+          </div>
+        </header>
+
+        <div class="workspace">
+          <article class="pdf-pane">
+            <div class="pdf-controls">
+              <button id="pdfZoomOutBtn" class="secondary-button" type="button" disabled>-</button>
+              <span id="pdfZoomLabel">100%</span>
+              <button id="pdfZoomInBtn" class="secondary-button" type="button" disabled>+</button>
+              <button id="pdfFitBtn" class="secondary-button" type="button" disabled>Fit</button>
+            </div>
+            <div class="pdf-viewer-crop">
+              <div id="pdfViewer" class="pdf-viewer" aria-label="Original PDF"></div>
+              <button id="selectionBubble" class="selection-bubble" type="button">Chat About This</button>
+            </div>
+          </article>
+          <div class="resizer" data-resizer="pdf-note" title="Drag to resize"></div>
+          <article class="note">
+            <div id="note" class="markdown-body">Load a paper to begin.</div>
+          </article>
+          <div class="resizer" data-resizer="note-chat" title="Drag to resize"></div>
+          <section id="chatDrawer" class="chat chat-pane">
+            <div class="chat-header">
+              <div class="section-title">Ask This Paper</div>
+            </div>
+            <div id="chatLog" class="chat-log"></div>
+            <div class="chat-input">
+              <textarea id="question" rows="3"></textarea>
+              <div class="chat-input-actions">
+                <button id="askBtn" disabled>Ask</button>
+              </div>
+            </div>
+            <div id="sources" class="sources"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+    <script src="/static/vendor/pdf.min.js"></script>
+    <script src="/static/vendor/katex/katex.min.js"></script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "name": "Paper Chat",
+  "version": "0.2.0",
+  "description": "Open selected Zotero items in the local Paper Chat reader.",
+  "homepage_url": "http://127.0.0.1:8766",
+  "applications": {
+    "zotero": {
+      "id": "paper-chat@local",
+      "update_url": "https://example.com/paper-chat-updates.json",
+      "strict_min_version": "6.999",
+      "strict_max_version": "9.9.9"
+    }
+  }
+}
