@@ -117,6 +117,11 @@ class LLMKeyRequest(BaseModel):
     api_key: str
 
 
+class PublicationLookupRequest(BaseModel):
+    title: str
+    paper_text: Optional[str] = None
+
+
 def safe_id(value: str) -> str:
     value = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._-")
     return value[:80] or "paper"
@@ -564,6 +569,25 @@ def compact_candidate(candidate: dict[str, Any], target_title: str) -> dict[str,
     }
 
 
+def is_arxiv_preprint(candidate: dict[str, Any]) -> bool:
+    source = str(candidate.get("source") or "").lower()
+    pub_type = str(candidate.get("type") or "").lower()
+    venue = str(candidate.get("venue") or "").lower()
+    return source == "arxiv" or pub_type == "preprint" or venue.startswith("arxiv")
+
+
+def publication_rank(candidate: dict[str, Any]) -> tuple[int, float]:
+    confidence = float(candidate.get("confidence") or 0)
+    has_publication_marker = bool(candidate.get("doi") or candidate.get("venue") or candidate.get("journal_ref"))
+    if confidence >= 0.78 and has_publication_marker and not is_arxiv_preprint(candidate):
+        return (3, confidence)
+    if confidence >= 0.78 and candidate.get("journal_ref"):
+        return (2, confidence)
+    if confidence >= 0.65 and has_publication_marker:
+        return (1, confidence)
+    return (0, confidence)
+
+
 def dedupe_candidates(candidates: list[dict[str, Any]], target_title: str) -> list[dict[str, Any]]:
     by_key: dict[str, dict[str, Any]] = {}
     for candidate in candidates:
@@ -586,7 +610,7 @@ def dedupe_candidates(candidates: list[dict[str, Any]], target_title: str) -> li
             continue
         if not existing:
             by_key[key] = compact
-    out = sorted(by_key.values(), key=lambda item: item["confidence"], reverse=True)
+    out = sorted(by_key.values(), key=publication_rank, reverse=True)
     return out[:8]
 
 
@@ -762,7 +786,7 @@ def resolve_publication_metadata(metadata: dict[str, Any], paper_text: str = "")
     best = compact[0] if compact else None
     status = "not_found"
     if best:
-        if best["confidence"] >= 0.82 and (best.get("doi") or best.get("venue")):
+        if publication_rank(best)[0] >= 2 and best["confidence"] >= 0.82:
             status = "found"
         elif best["confidence"] >= 0.65:
             status = "maybe"
@@ -1179,6 +1203,16 @@ def lookup_publication(paper_id: str) -> dict[str, Any]:
     publication = resolve_publication_metadata(metadata, paper_text)
     metadata["publication"] = publication
     write_json(pdir / "metadata.json", metadata)
+    return {"metadata": metadata, "publication": publication}
+
+
+@app.post("/api/publication")
+def lookup_publication_by_title(req: PublicationLookupRequest) -> dict[str, Any]:
+    title = re.sub(r"\s+", " ", req.title or "").strip()
+    if not title:
+        raise HTTPException(400, "Title is required")
+    metadata = {"paper_id": safe_id(title), "title": title, "pdf_path": ""}
+    publication = resolve_publication_metadata(metadata, req.paper_text or "")
     return {"metadata": metadata, "publication": publication}
 
 

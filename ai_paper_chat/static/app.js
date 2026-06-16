@@ -361,10 +361,16 @@ function formatPublication(publication) {
   }
   const best = publication.best;
   if (!best) {
-    root.innerHTML = `<span class="publication-pill muted-pill">Publication not found</span>`;
+    const title = publication.queried_title ? ` · ${escapeHtml(publication.queried_title)}` : "";
+    const reason = publication.error ? ` · ${escapeHtml(publication.error)}` : "";
+    root.innerHTML = `
+      <span class="publication-pill muted-pill">No final publication</span>
+      <span>No venue found yet${title}${reason}</span>
+    `;
     return;
   }
-  const statusLabel = publication.status === "found" ? "Published" : "Possible match";
+  const isPreprint = best.source === "arxiv" || String(best.type || "").toLowerCase().includes("preprint");
+  const statusLabel = publication.status === "found" ? "Published" : isPreprint ? "Preprint" : "Possible match";
   const venue = best.venue || best.publisher || "venue unknown";
   const year = best.year ? ` · ${best.year}` : "";
   const doi = best.doi ? ` · DOI: ${escapeHtml(best.doi)}` : "";
@@ -376,6 +382,28 @@ function formatPublication(publication) {
     <span class="publication-pill">${statusLabel}</span>
     <span>${link}${year}${doi}${confidence}</span>
   `;
+}
+
+async function displayPublicationLookup(title) {
+  const cleaned = title.trim();
+  if (!cleaned) return false;
+  setBusy("Searching publication info...");
+  const data = await api("/api/publication", {
+    method: "POST",
+    body: JSON.stringify({ title: cleaned }),
+  });
+  currentPaper = "";
+  currentEntryUrl = "";
+  $("paperTitle").textContent = cleaned;
+  $("paperMeta").textContent = "publication lookup only";
+  formatPublication(data.publication);
+  $("noteBtn").disabled = true;
+  $("askBtn").disabled = true;
+  $("entryBtn").disabled = true;
+  $("publicationBtn").disabled = true;
+  setBusy(data.publication?.status === "not_found" ? "No final publication found." : "Publication lookup complete.");
+  window.setTimeout(() => setBusy(), 1600);
+  return true;
 }
 
 async function refreshPaper() {
@@ -741,7 +769,7 @@ function setupSidebarAutoHide() {
   });
 }
 
-async function loadPaper(payload) {
+async function loadPaper(payload, options = {}) {
   setBusy("Loading and indexing PDF...");
   try {
     const data = await api("/api/load", {
@@ -753,6 +781,7 @@ async function loadPaper(payload) {
     setBusy();
   } catch (err) {
     setBusy();
+    if (options.throwOnError) throw err;
     alert(err.message);
   }
 }
@@ -872,8 +901,20 @@ async function init() {
       }
       window.setTimeout(() => setBusy(), 1600);
     } catch (err) {
-      alert(err.message);
-      setBusy();
+      const title = $("paperTitle").textContent.trim();
+      if (title && title !== "No paper loaded") {
+        try {
+          await displayPublicationLookup(title);
+        } catch (fallbackErr) {
+          formatPublication({ status: "not_found", queried_title: title, best: null, error: fallbackErr.message });
+          setBusy("No final publication found.");
+          window.setTimeout(() => setBusy(), 1600);
+        }
+      } else {
+        formatPublication({ status: "not_found", best: null, error: err.message });
+        setBusy("No final publication found.");
+        window.setTimeout(() => setBusy(), 1600);
+      }
     } finally {
       setButtonLoading($("publicationBtn"), false);
     }
@@ -944,7 +985,11 @@ async function init() {
       await refreshPaper();
       setBusy();
     } catch {
-      await loadPaper({ key: paper });
+      try {
+        await loadPaper({ key: paper }, { throwOnError: true });
+      } catch {
+        await displayPublicationLookup(paper);
+      }
     }
   }
 }
