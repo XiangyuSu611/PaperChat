@@ -362,24 +362,17 @@ label,
 }
 
 .actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
   gap: 8px;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-}
-
-.publication-action {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  min-width: min(560px, 100%);
-  flex-wrap: wrap;
 }
 
 .publication-meta-action {
+  grid-column: 1 / -1;
   justify-content: flex-end;
+  justify-self: end;
   max-width: min(560px, 52vw);
   margin-top: 0;
   text-align: right;
@@ -950,10 +943,15 @@ pre {
   }
 
   .actions,
-  .publication-action,
   .publication-meta-action {
     justify-content: flex-start;
+    justify-self: start;
     text-align: left;
     max-width: 100%;
+  }
+
+  .actions {
+    grid-template-columns: 1fr;
+    width: 100%;
   }
 }
