@@ -365,7 +365,24 @@ label,
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
+}
+
+.publication-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: min(560px, 100%);
+  flex-wrap: wrap;
+}
+
+.publication-meta-action {
+  justify-content: flex-end;
+  max-width: min(560px, 52vw);
+  margin-top: 0;
+  text-align: right;
 }
 
 .workspace {
@@ -930,5 +947,13 @@ pre {
   .toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .actions,
+  .publication-action,
+  .publication-meta-action {
+    justify-content: flex-start;
+    text-align: left;
+    max-width: 100%;
   }
 }
